@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -24,8 +25,14 @@ func GenerateOAuthCode(c *gin.Context) {
 	session := sessions.Default(c)
 	state := common.GetRandomString(12)
 	affCode := c.Query("aff")
+	inviteCode := strings.TrimSpace(c.Query("invite_code"))
 	if affCode != "" {
 		session.Set("aff", affCode)
+	}
+	if inviteCode != "" {
+		session.Set("invite_code", inviteCode)
+	} else {
+		session.Delete("invite_code")
 	}
 	session.Set("oauth_state", state)
 	err := session.Save()
@@ -268,6 +275,13 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	if affCode != nil {
 		inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
 	}
+	inviteCode := ""
+	if inviteCodeValue, ok := session.Get("invite_code").(string); ok {
+		inviteCode = strings.TrimSpace(inviteCodeValue)
+	}
+	if common.InviteCodeRegisterEnabled && inviteCode == "" {
+		return nil, fmt.Errorf("请输入邀请码")
+	}
 
 	// Use transaction to ensure user creation and OAuth binding are atomic
 	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {
@@ -286,6 +300,11 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 			}
 			if err := model.CreateUserOAuthBindingWithTx(tx, binding); err != nil {
 				return err
+			}
+			if common.InviteCodeRegisterEnabled {
+				if err := model.ConsumeInviteCodeTx(tx, inviteCode, user.Id, user.Username); err != nil {
+					return err
+				}
 			}
 
 			return nil
@@ -315,6 +334,11 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 				"telegram_id": user.TelegramId,
 			}).Error; err != nil {
 				return err
+			}
+			if common.InviteCodeRegisterEnabled {
+				if err := model.ConsumeInviteCodeTx(tx, inviteCode, user.Id, user.Username); err != nil {
+					return err
+				}
 			}
 
 			return nil

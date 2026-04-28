@@ -48,6 +48,7 @@ import {
   Divider,
   Form,
   Icon,
+  Input,
   Modal,
 } from '@douyinfe/semi-ui';
 import Title from '@douyinfe/semi-ui/lib/es/typography/title';
@@ -78,9 +79,10 @@ const LoginForm = () => {
   const [inputs, setInputs] = useState({
     username: '',
     password: '',
+    invite_code: '',
     wechat_verification_code: '',
   });
-  const { username, password } = inputs;
+  const { username, password, invite_code } = inputs;
   const [searchParams, setSearchParams] = useSearchParams();
   const [submitted, setSubmitted] = useState(false);
   const [userState, userDispatch] = useContext(UserContext);
@@ -189,8 +191,11 @@ const LoginForm = () => {
     }
     setWechatCodeSubmitLoading(true);
     try {
+      const inviteCodeQuery = invite_code?.trim()
+        ? `&invite_code=${encodeURIComponent(invite_code.trim())}`
+        : '';
       const res = await API.get(
-        `/api/oauth/wechat?code=${inputs.wechat_verification_code}`,
+        `/api/oauth/wechat?code=${inputs.wechat_verification_code}${inviteCodeQuery}`,
       );
       const { success, message, data } = res.data;
       if (success) {
@@ -291,6 +296,9 @@ const LoginForm = () => {
         params[field] = response[field];
       }
     });
+    if (invite_code?.trim()) {
+      params.invite_code = invite_code.trim();
+    }
     try {
       const res = await API.get(`/api/oauth/telegram/login`, { params });
       const { success, message, data } = res.data;
@@ -330,7 +338,10 @@ const LoginForm = () => {
       setGithubButtonDisabled(true);
     }, 20000);
     try {
-      onGitHubOAuthClicked(status.github_client_id, { shouldLogout: true });
+      onGitHubOAuthClicked(status.github_client_id, {
+        shouldLogout: true,
+        inviteCode: invite_code?.trim(),
+      });
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
       setTimeout(() => setGithubLoading(false), 3000);
@@ -345,7 +356,10 @@ const LoginForm = () => {
     }
     setDiscordLoading(true);
     try {
-      onDiscordOAuthClicked(status.discord_client_id, { shouldLogout: true });
+      onDiscordOAuthClicked(status.discord_client_id, {
+        shouldLogout: true,
+        inviteCode: invite_code?.trim(),
+      });
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
       setTimeout(() => setDiscordLoading(false), 3000);
@@ -364,7 +378,7 @@ const LoginForm = () => {
         status.oidc_authorization_endpoint,
         status.oidc_client_id,
         false,
-        { shouldLogout: true },
+        { shouldLogout: true, inviteCode: invite_code?.trim() },
       );
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
@@ -380,7 +394,10 @@ const LoginForm = () => {
     }
     setLinuxdoLoading(true);
     try {
-      onLinuxDOOAuthClicked(status.linuxdo_client_id, { shouldLogout: true });
+      onLinuxDOOAuthClicked(status.linuxdo_client_id, {
+        shouldLogout: true,
+        inviteCode: invite_code?.trim(),
+      });
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
       setTimeout(() => setLinuxdoLoading(false), 3000);
@@ -395,7 +412,10 @@ const LoginForm = () => {
     }
     setCustomOAuthLoading((prev) => ({ ...prev, [provider.slug]: true }));
     try {
-      onCustomOAuthClicked(provider, { shouldLogout: true });
+      onCustomOAuthClicked(provider, {
+        shouldLogout: true,
+        inviteCode: invite_code?.trim(),
+      });
     } finally {
       // 由于重定向，这里不会执行到，但为了完整性添加
       setTimeout(() => {
@@ -519,6 +539,16 @@ const LoginForm = () => {
             </div>
             <div className='px-2 py-8'>
               <div className='space-y-3'>
+                {status.invite_code_required && (
+                  <Input
+                    value={invite_code}
+                    onChange={(value) => handleChange('invite_code', value)}
+                    prefix={<IconKey />}
+                    placeholder={t('首次第三方登录如需自动注册，请输入邀请码')}
+                    showClear
+                    className='!rounded-xl'
+                  />
+                )}
                 {status.wechat_login && (
                   <Button
                     theme='outline'

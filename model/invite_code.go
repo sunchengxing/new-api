@@ -10,7 +10,7 @@ import (
 
 type InviteCode struct {
 	Id          int            `json:"id"`
-	Code        string         `json:"code" gorm:"type:varchar(32);uniqueIndex;index"`
+	Code        string         `json:"code" gorm:"type:varchar(32);uniqueIndex"`
 	CreatedTime int64          `json:"created_time" gorm:"bigint"`
 	UsedTime    int64          `json:"used_time" gorm:"bigint"`
 	UsedUserId  int            `json:"used_user_id" gorm:"index"`
@@ -75,7 +75,11 @@ func ConsumeInviteCodeTx(tx *gorm.DB, code string, userId int, username string) 
 		return errors.New("请输入邀请码")
 	}
 	var invite InviteCode
-	err := tx.Set("gorm:query_option", "FOR UPDATE").Where("code = ?", normCode).First(&invite).Error
+	q := tx.Where("code = ?", normCode)
+	if !common.UsingSQLite {
+		q = q.Set("gorm:query_option", "FOR UPDATE")
+	}
+	err := q.First(&invite).Error
 	if err != nil {
 		return errors.New("邀请码无效或已被使用")
 	}

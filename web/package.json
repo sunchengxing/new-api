@@ -5,11 +5,13 @@
   "type": "module",
   "dependencies": {
     "@douyinfe/semi-icons": "^2.63.1",
-    "@douyinfe/semi-ui": "^2.69.1",
+    "@douyinfe/semi-theme-default": "^2.95.1",
+    "@douyinfe/semi-ui": "^2.24.0",
     "@lobehub/icons": "^2.0.0",
     "@visactor/react-vchart": "~1.8.8",
     "@visactor/vchart": "~1.8.8",
     "@visactor/vchart-semi-theme": "~1.8.8",
+    "antd": "^6.3.6",
     "axios": "1.15.0",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.11",
@@ -37,6 +39,7 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "sass": "^1.99.0",
     "sse.js": "^2.6.0",
     "unist-util-visit": "^5.0.0",
     "use-debounce": "^10.0.4"

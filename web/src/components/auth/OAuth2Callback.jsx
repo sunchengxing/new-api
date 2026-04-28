@@ -33,7 +33,7 @@ import Loading from '../common/ui/Loading';
 const OAuth2Callback = (props) => {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
-  const [, userDispatch] = useContext(UserContext);
+  const [userState, userDispatch] = useContext(UserContext);
   const navigate = useNavigate();
   
   // 防止 React 18 Strict Mode 下重复执行
@@ -41,6 +41,18 @@ const OAuth2Callback = (props) => {
 
   // 最大重试次数
   const MAX_RETRIES = 3;
+
+  const clearLocalLoginState = async () => {
+    if (userState?.user) {
+      return;
+    }
+    try {
+      await API.get('/api/user/logout', { skipErrorHandler: true });
+    } catch (error) {}
+    userDispatch({ type: 'logout' });
+    localStorage.removeItem('user');
+    updateAPI();
+  };
 
   const sendCode = async (code, state, retry = 0) => {
     try {
@@ -51,8 +63,14 @@ const OAuth2Callback = (props) => {
       const { success, message, data } = resData;
 
       if (!success) {
+        await clearLocalLoginState();
         // 业务错误不重试，直接显示错误
         showError(message || t('授权失败'));
+        if (userState?.user) {
+          navigate('/console/personal');
+        } else {
+          navigate(message && message.includes('邀请码') ? '/register' : '/login');
+        }
         return;
       }
 
@@ -76,8 +94,9 @@ const OAuth2Callback = (props) => {
       }
 
       // 重试次数耗尽，提示错误并返回设置页面
+      await clearLocalLoginState();
       showError(error.message || t('授权失败'));
-      navigate('/console/personal');
+      navigate(userState?.user ? '/console/personal' : '/login');
     }
   };
 
@@ -93,8 +112,9 @@ const OAuth2Callback = (props) => {
 
     // 参数缺失直接返回
     if (!code) {
+      clearLocalLoginState();
       showError(t('未获取到授权码'));
-      navigate('/console/personal');
+      navigate(userState?.user ? '/console/personal' : '/login');
       return;
     }
 

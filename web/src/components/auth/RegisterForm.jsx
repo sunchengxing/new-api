@@ -184,14 +184,22 @@ const RegisterForm = () => {
   };
 
   const onSubmitWeChatVerificationCode = async () => {
+    if (status?.invite_code_required && !invite_code?.trim()) {
+      showInfo('请输入邀请码！');
+      return;
+    }
     if (turnstileEnabled && turnstileToken === '') {
       showInfo('请稍后几秒重试，Turnstile 正在检查用户环境！');
       return;
     }
     setWechatCodeSubmitLoading(true);
     try {
+      const inviteCodeQuery =
+        status?.invite_code_required && invite_code?.trim()
+          ? `&invite_code=${encodeURIComponent(invite_code.trim())}`
+          : '';
       const res = await API.get(
-        `/api/oauth/wechat?code=${inputs.wechat_verification_code}`,
+        `/api/oauth/wechat?code=${inputs.wechat_verification_code}${inviteCodeQuery}`,
       );
       const { success, message, data } = res.data;
       if (success) {
@@ -203,9 +211,21 @@ const RegisterForm = () => {
         showSuccess('登录成功！');
         setShowWeChatLoginModal(false);
       } else {
+        try {
+          await API.get('/api/user/logout', { skipErrorHandler: true });
+        } catch (e) {}
+        userDispatch({ type: 'logout' });
+        localStorage.removeItem('user');
+        updateAPI();
         showError(message);
       }
     } catch (error) {
+      try {
+        await API.get('/api/user/logout', { skipErrorHandler: true });
+      } catch (e) {}
+      userDispatch({ type: 'logout' });
+      localStorage.removeItem('user');
+      updateAPI();
       showError('登录失败，请重试');
     } finally {
       setWechatCodeSubmitLoading(false);
@@ -285,6 +305,10 @@ const RegisterForm = () => {
   };
 
   const handleGitHubClick = () => {
+    if (status?.invite_code_required && !invite_code?.trim()) {
+      showInfo('请输入邀请码！');
+      return;
+    }
     if (githubButtonDisabled) {
       return;
     }
@@ -300,29 +324,43 @@ const RegisterForm = () => {
       setGithubButtonDisabled(true);
     }, 20000);
     try {
-      onGitHubOAuthClicked(status.github_client_id, { shouldLogout: true });
+      onGitHubOAuthClicked(status.github_client_id, {
+        shouldLogout: true,
+        inviteCode: invite_code?.trim(),
+      });
     } finally {
       setTimeout(() => setGithubLoading(false), 3000);
     }
   };
 
   const handleDiscordClick = () => {
+    if (status?.invite_code_required && !invite_code?.trim()) {
+      showInfo('请输入邀请码！');
+      return;
+    }
     setDiscordLoading(true);
     try {
-      onDiscordOAuthClicked(status.discord_client_id, { shouldLogout: true });
+      onDiscordOAuthClicked(status.discord_client_id, {
+        shouldLogout: true,
+        inviteCode: invite_code?.trim(),
+      });
     } finally {
       setTimeout(() => setDiscordLoading(false), 3000);
     }
   };
 
   const handleOIDCClick = () => {
+    if (status?.invite_code_required && !invite_code?.trim()) {
+      showInfo('请输入邀请码！');
+      return;
+    }
     setOidcLoading(true);
     try {
       onOIDCClicked(
         status.oidc_authorization_endpoint,
         status.oidc_client_id,
         false,
-        { shouldLogout: true },
+        { shouldLogout: true, inviteCode: invite_code?.trim() },
       );
     } finally {
       setTimeout(() => setOidcLoading(false), 3000);
@@ -330,18 +368,32 @@ const RegisterForm = () => {
   };
 
   const handleLinuxDOClick = () => {
+    if (status?.invite_code_required && !invite_code?.trim()) {
+      showInfo('请输入邀请码！');
+      return;
+    }
     setLinuxdoLoading(true);
     try {
-      onLinuxDOOAuthClicked(status.linuxdo_client_id, { shouldLogout: true });
+      onLinuxDOOAuthClicked(status.linuxdo_client_id, {
+        shouldLogout: true,
+        inviteCode: invite_code?.trim(),
+      });
     } finally {
       setTimeout(() => setLinuxdoLoading(false), 3000);
     }
   };
 
   const handleCustomOAuthClick = (provider) => {
+    if (status?.invite_code_required && !invite_code?.trim()) {
+      showInfo('请输入邀请码！');
+      return;
+    }
     setCustomOAuthLoading((prev) => ({ ...prev, [provider.slug]: true }));
     try {
-      onCustomOAuthClicked(provider, { shouldLogout: true });
+      onCustomOAuthClicked(provider, {
+        shouldLogout: true,
+        inviteCode: invite_code?.trim(),
+      });
     } finally {
       setTimeout(() => {
         setCustomOAuthLoading((prev) => ({ ...prev, [provider.slug]: false }));
@@ -362,6 +414,10 @@ const RegisterForm = () => {
   };
 
   const onTelegramLoginClicked = async (response) => {
+    if (status?.invite_code_required && !invite_code?.trim()) {
+      showInfo('请输入邀请码！');
+      return;
+    }
     const fields = [
       'id',
       'first_name',
@@ -378,6 +434,9 @@ const RegisterForm = () => {
         params[field] = response[field];
       }
     });
+    if (invite_code?.trim()) {
+      params.invite_code = invite_code.trim();
+    }
     try {
       const res = await API.get(`/api/oauth/telegram/login`, { params });
       const { success, message, data } = res.data;
@@ -389,9 +448,21 @@ const RegisterForm = () => {
         updateAPI();
         navigate('/');
       } else {
+        try {
+          await API.get('/api/user/logout', { skipErrorHandler: true });
+        } catch (e) {}
+        userDispatch({ type: 'logout' });
+        localStorage.removeItem('user');
+        updateAPI();
         showError(message);
       }
     } catch (error) {
+      try {
+        await API.get('/api/user/logout', { skipErrorHandler: true });
+      } catch (e) {}
+      userDispatch({ type: 'logout' });
+      localStorage.removeItem('user');
+      updateAPI();
       showError('登录失败，请重试');
     }
   };

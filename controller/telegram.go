@@ -4,15 +4,19 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func TelegramBind(c *gin.Context) {
@@ -88,12 +92,57 @@ func TelegramLogin(c *gin.Context) {
 
 	telegramId := params["id"][0]
 	user := model.User{TelegramId: telegramId}
-	if err := user.FillUserByTelegramId(); err != nil {
-		c.JSON(200, gin.H{
-			"message": err.Error(),
-			"success": false,
-		})
-		return
+	if model.IsTelegramIdAlreadyTaken(telegramId) {
+		if err := user.FillUserByTelegramId(); err != nil {
+			c.JSON(200, gin.H{
+				"message": err.Error(),
+				"success": false,
+			})
+			return
+		}
+	} else {
+		if !common.RegisterEnabled {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "管理员关闭了新用户注册",
+				"success": false,
+			})
+			return
+		}
+		inviteCode := strings.TrimSpace(params.Get("invite_code"))
+		user.Username = "telegram_" + strconv.Itoa(model.GetMaxUserId()+1)
+		if username := strings.TrimSpace(params.Get("username")); username != "" {
+			user.DisplayName = username
+		} else {
+			user.DisplayName = strings.TrimSpace(fmt.Sprintf("%s %s", params.Get("first_name"), params.Get("last_name")))
+			if user.DisplayName == "" {
+				user.DisplayName = "Telegram User"
+			}
+		}
+		user.Role = common.RoleCommonUser
+		user.Status = common.UserStatusEnabled
+		if err := model.DB.Transaction(func(tx *gorm.DB) error {
+			if err := user.InsertWithTx(tx, 0); err != nil {
+				return err
+			}
+			if err := tx.Model(&user).Update("telegram_id", telegramId).Error; err != nil {
+				return err
+			}
+			user.TelegramId = telegramId
+			if common.InviteCodeRegisterEnabled {
+				if inviteCode == "" {
+					return fmt.Errorf("请输入邀请码")
+				}
+				return model.ConsumeInviteCodeTx(tx, inviteCode, user.Id, user.Username)
+			}
+			return nil
+		}); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"message": err.Error(),
+				"success": false,
+			})
+			return
+		}
+		user.FinalizeOAuthUserCreation(0)
 	}
 	setupLogin(&user, c)
 }
@@ -104,6 +153,9 @@ func checkTelegramAuthorization(params map[string][]string, token string) bool {
 	for k, v := range params {
 		if k == "hash" {
 			hash = v[0]
+			continue
+		}
+		if k == "invite_code" || k == "aff" {
 			continue
 		}
 		strs = append(strs, k+"="+v[0])

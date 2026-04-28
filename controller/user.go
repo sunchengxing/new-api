@@ -176,7 +176,7 @@ func Register(c *gin.Context) {
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId, _ := model.GetUserIdByAffCode(affCode)
 	inviteCode := strings.TrimSpace(user.InviteCode)
-	if inviteCode == "" {
+	if common.InviteCodeRegisterEnabled && inviteCode == "" {
 		common.ApiErrorMsg(c, "请输入邀请码")
 		return
 	}
@@ -194,7 +194,10 @@ func Register(c *gin.Context) {
 		if err := cleanUser.InsertWithTx(tx, inviterId); err != nil {
 			return err
 		}
-		return model.ConsumeInviteCodeTx(tx, inviteCode, cleanUser.Id, cleanUser.Username)
+		if common.InviteCodeRegisterEnabled {
+			return model.ConsumeInviteCodeTx(tx, inviteCode, cleanUser.Id, cleanUser.Username)
+		}
+		return nil
 	}); err != nil {
 		common.ApiError(c, err)
 		return
