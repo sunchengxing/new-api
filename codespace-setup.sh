@@ -54,9 +54,76 @@ SUDO="$(need_sudo)"
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 version_ge() {
-  # 用法: version_ge "1.25.1" "1.22"  => 0(true) / 1(false)
   printf '%s\n%s\n' "$2" "$1" | sort -V -C
 }
+
+# ---------------------- 飞书机器人通知 ----------------------
+FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/0dfdcf6b-8435-4978-b116-7364d9f3ac79"
+
+# 根据标题关键词决定卡片颜色
+_feishu_template() {
+  local title="$1"
+  if [[ "$title" == *"告警"* && "$title" == *"通知"* ]]; then
+    echo "red"
+  elif [[ "$title" == *"告警"* ]]; then
+    echo "orange"
+  elif [[ "$title" == *"通知"* ]]; then
+    echo "green"
+  else
+    echo "blue"
+  fi
+}
+
+# 发送飞书卡片消息: notify_feishu "标题" "markdown正文" ["来源"]
+notify_feishu() {
+  local title="$1"
+  local content="$2"
+  local source="${3:-Codespaces 自动部署}"
+  local now
+  now="$(date '+%Y-%m-%d %H:%M:%S')"
+  local template
+  template="$(_feishu_template "$title")"
+
+  if ! has_cmd jq; then
+    warn "jq 未安装，跳过飞书通知"
+    return 0
+  fi
+
+  jq -n \
+    --arg title "$title" \
+    --arg content "$content" \
+    --arg template "$template" \
+    --arg source "$source" \
+    --arg now "$now" \
+    '{
+      msg_type: "interactive",
+      card: {
+        header: {
+          title: { tag: "plain_text", content: $title },
+          template: $template
+        },
+        elements: [
+          { tag: "markdown", content: $content },
+          { tag: "hr" },
+          { tag: "note", elements: [
+            { tag: "plain_text", content: ("来源：" + $source + " | 时间：" + $now) }
+          ]}
+        ]
+      }
+    }' | curl -s -X POST "$FEISHU_WEBHOOK" \
+      -H 'Content-Type: application/json' \
+      -d @- >/dev/null 2>&1 || true
+}
+
+# 错误时也通知
+trap_handler() {
+  local line="$1"
+  local ec="$2"
+  error "脚本在第 ${line} 行失败,退出码 ${ec}"
+  notify_feishu "⚠️ 【告警】部署脚本执行失败" "**失败位置：** 第 ${line} 行\n**退出码：** ${ec}\n\n部署过程中发生错误，请检查日志。" "Codespaces 部署脚本"
+  exit 1
+}
+trap 'trap_handler $LINENO $?' ERR
 
 # ---------------------- 0. 校验环境 ----------------------
 log "检查运行环境..."
@@ -108,6 +175,9 @@ DB_NAME="${BASH_REMATCH[5]%%\?*}"   # 去掉可能的 ?params
 
 ok "解析 SQL_DSN: user=$DB_USER host=$DB_HOST:$DB_PORT db=$DB_NAME"
 
+# 飞书通知: 脚本启动
+notify_feishu "📌 【部署】Codespaces 环境初始化开始" "**环境：** ${CODESPACE_NAME:-本地}\n**数据库：** ${DB_NAME}\n**端口：** ${APP_PORT}\n\n开始安装依赖、构建前端、启动后端..."
+
 # ---------------------- 1. 安装系统依赖 ----------------------
 log "更新 apt 索引 (静默)..."
 $SUDO apt-get update -qq
@@ -126,6 +196,7 @@ install_pkg_if_missing curl
 install_pkg_if_missing ca-certificates
 install_pkg_if_missing build-essential
 install_pkg_if_missing unzip
+install_pkg_if_missing jq
 
 # ---------------------- 2. Go ----------------------
 install_go() {
@@ -293,6 +364,9 @@ cd "$SCRIPT_DIR/web"
 bun install --silent
 ok "前端依赖完成"
 
+# 飞书通知: 开始构建
+notify_feishu "📌 【部署】前端构建开始" "**步骤：** Vite 生产构建\n**堆内存：** 2048MB\n**Swap：** 已启用 4GB\n\n正在构建前端..."
+
 log "构建前端 (bun run build) ..."
 # Codespaces 默认机器仅 4GB RAM，添加 swap 防止 Node OOM
 if ! swapon --show=SIZE --noheadings | grep -q '4G'; then
@@ -308,6 +382,9 @@ sync && sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null || true
 export NODE_OPTIONS="--max-old-space-size=2048"
 node ./node_modules/vite/bin/vite.js build
 ok "前端构建完成 -> web/dist"
+
+# 飞书通知: 构建成功
+notify_feishu "🔔 【通知】前端构建完成" "**状态：** ✅ 成功\n**输出目录：** web/dist\n**堆内存：** 2048MB"
 
 # ---------------------- 8. 启动后端 (后台) ----------------------
 cd "$SCRIPT_DIR"
@@ -357,3 +434,10 @@ fi
 ok "  停止命令:   kill \$(cat ${PID_FILE})"
 ok "  查看日志:   tail -f ${APP_LOG}"
 ok "===================================================="
+
+# 飞书通知: 部署完成
+ACCESS_URL="http://localhost:${APP_PORT}"
+if [[ -n "${CODESPACE_NAME:-}" ]] && [[ -n "${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}" ]]; then
+  ACCESS_URL="https://${CODESPACE_NAME}-${APP_PORT}.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+fi
+notify_feishu "🔔 【通知】new-api 部署完成" "**状态：** ✅ 服务已启动\n**PID：** ${APP_PID}\n**访问地址：** ${ACCESS_URL}\n**停止命令：** kill \$(cat ${PID_FILE})\n**查看日志：** tail -f ${APP_LOG}"
