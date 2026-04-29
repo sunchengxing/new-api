@@ -294,6 +294,8 @@ bun install --silent
 ok "前端依赖完成"
 
 log "构建前端 (bun run build) ..."
+# 增大 Node.js 堆内存上限，防止 Codespaces 低内存环境 OOM
+export NODE_OPTIONS="--max-old-space-size=3072"
 bun run build
 ok "前端构建完成 -> web/dist"
 
