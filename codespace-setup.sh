@@ -217,29 +217,34 @@ start_mysql
 
 configure_mysql() {
   log "配置 MySQL root 密码 / 数据库 ..."
-  # 尝试方式 A: 当前已设置目标密码 (幂等)
-  if mysql -u"$DB_USER" -p"$DB_PASS" -h "$DB_HOST" -P "$DB_PORT" -e "SELECT 1" >/dev/null 2>&1; then
+
+  # 统一用 TCP 连接 (避免 socket 权限问题 errno 13)
+  local TCP="-h 127.0.0.1 -P ${DB_PORT} --protocol=TCP"
+
+  # 方式 A: 目标密码已设置好 (幂等)
+  if mysql -u"$DB_USER" -p"$DB_PASS" $TCP -e "SELECT 1" >/dev/null 2>&1; then
     ok "MySQL 密码已正确配置"
   else
-    # 方式 B: 通过 sudo / unix_socket 登录 root, 设置密码
     local sql="
 ALTER USER '${DB_USER}'@'localhost' IDENTIFIED WITH mysql_native_password BY '${DB_PASS}';
 FLUSH PRIVILEGES;
 "
+    # 方式 B: sudo + socket (权限足够时)
     if $SUDO mysql -u root -e "$sql" 2>/dev/null; then
-      ok "已通过 socket 登录设置 root 密码"
-    elif mysql -u root -e "$sql" 2>/dev/null; then
-      ok "已通过空密码 root 设置密码"
+      ok "已通过 sudo socket 设置 root 密码"
+    # 方式 C: TCP 空密码 root (部分 Codespaces 镜像默认无密码)
+    elif mysql -u root $TCP -e "$sql" 2>/dev/null; then
+      ok "已通过 TCP 空密码 root 设置密码"
     else
       error "无法以管理员身份登录 MySQL 设置密码,请手动处理"
       exit 1
     fi
   fi
 
-  # 创建数据库 (utf8mb4)
-  mysql -u"$DB_USER" -p"$DB_PASS" -h "$DB_HOST" -P "$DB_PORT" -e "
+  # 创建数据库 (统一走 TCP)
+  mysql -u"$DB_USER" -p"$DB_PASS" $TCP -e "
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-"
+" 2>/dev/null
   ok "数据库 ${DB_NAME} 就绪"
 }
 configure_mysql
