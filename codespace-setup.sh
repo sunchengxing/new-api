@@ -368,7 +368,9 @@ ok "前端依赖完成"
 notify_feishu "📌 【部署】前端构建开始" "**步骤：** Vite 生产构建\n**堆内存：** 2048MB\n**Swap：** 已启用 4GB\n\n正在构建前端..."
 
 log "构建前端 (bun run build) ..."
-# Codespaces 默认机器仅 4GB RAM，添加 swap 防止 Node OOM
+# Codespaces 默认机器仅 4GB RAM，需要多重优化防止 Node OOM
+
+# 1. 添加 swap (部分容器可用)
 if ! swapon --show=SIZE --noheadings | grep -q '4G'; then
   log "创建 swap 文件 (4GB) 以防 OOM ..."
   sudo fallocate -l 4G /swapfile 2>/dev/null
@@ -376,11 +378,30 @@ if ! swapon --show=SIZE --noheadings | grep -q '4G'; then
   sudo mkswap /swapfile 2>/dev/null
   sudo swapon /swapfile 2>/dev/null || true
 fi
-# 释放系统缓存，为构建腾出内存
+
+# 2. 释放系统缓存，为构建腾出内存
 sync && sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null || true
-# 降低堆上限到 2048MB，迫使 GC 更积极回收，避免系统 OOM killer 杀进程
-export NODE_OPTIONS="--max-old-space-size=2048"
-node ./node_modules/vite/bin/vite.js build
+
+# 3. 允许内核内存超分配 — Node 可分配超过物理 RAM 的虚拟内存
+#    这是 Redis 官方推荐的设置，对短生命周期的构建进程安全
+sudo sysctl -w vm.overcommit_memory=1 2>/dev/null || true
+
+# 4. 堆上限 3072MB — 超分配模式下 3GB 虚拟内存分配会成功，GC 有足够空间回收
+export NODE_OPTIONS="--max-old-space-size=3072"
+
+# 5. 两阶段构建: 先不压缩 (减少 Rollup 生成阶段峰值内存)
+log "第一阶段: Vite 构建 (不压缩)..."
+node ./node_modules/vite/bin/vite.js build --minify false
+
+# 6. 用 esbuild (Go 实现, 内存占用 ~50MB) 压缩输出
+log "第二阶段: esbuild 压缩..."
+for f in ./dist/assets/*.js; do
+  node ./node_modules/esbuild/bin/esbuild "$f" --minify --allow-overwrite --outfile="$f"
+done
+for f in ./dist/assets/*.css; do
+  node ./node_modules/esbuild/bin/esbuild "$f" --minify --allow-overwrite --outfile="$f" --loader=css
+done
+
 ok "前端构建完成 -> web/dist"
 
 # 飞书通知: 构建成功
