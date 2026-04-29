@@ -72,11 +72,21 @@ fi
 
 mkdir -p "$LOG_DIR"
 
-# 加载 .env (导出变量)
-set -o allexport
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +o allexport
+# 加载 .env (安全逐行解析，支持含括号等特殊字符的值)
+while IFS= read -r line || [[ -n "$line" ]]; do
+  # 跳过注释和空行
+  [[ "$line" =~ ^[[:space:]]*# ]] && continue
+  [[ -z "${line// }" ]] && continue
+  # 只处理 KEY=VALUE 格式
+  if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+    key="${BASH_REMATCH[1]}"
+    val="${BASH_REMATCH[2]}"
+    # 去掉值两端的引号（单引号或双引号）
+    val="${val#\"}" ; val="${val%\"}"
+    val="${val#\'}" ; val="${val%\'}"
+    export "$key=$val"
+  fi
+done < "$ENV_FILE"
 
 if [[ -z "${SQL_DSN:-}" ]]; then
   error ".env 中缺少 SQL_DSN"
