@@ -294,9 +294,17 @@ bun install --silent
 ok "前端依赖完成"
 
 log "构建前端 (bun run build) ..."
-# 增大 Node.js 堆内存上限，防止 Codespaces 低内存环境 OOM
-export NODE_OPTIONS="--max-old-space-size=3072"
-bun run build
+# Codespaces 默认机器仅 4GB RAM，添加 swap 防止 Node OOM
+if [ ! -f /swapfile ]; then
+  log "创建 swap 文件 (4GB) 以防 OOM ..."
+  sudo fallocate -l 4G /swapfile 2>/dev/null
+  sudo chmod 600 /swapfile 2>/dev/null
+  sudo mkswap /swapfile 2>/dev/null
+  sudo swapon /swapfile 2>/dev/null || true
+fi
+# 增大 Node.js 堆内存上限，通过 npx 直接调用 vite 确保 NODE_OPTIONS 生效
+export NODE_OPTIONS="--max-old-space-size=4096"
+npx vite build
 ok "前端构建完成 -> web/dist"
 
 # ---------------------- 8. 启动后端 (后台) ----------------------
