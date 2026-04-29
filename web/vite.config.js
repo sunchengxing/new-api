@@ -65,24 +65,41 @@ export default defineConfig({
     },
   },
   build: {
+    sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-core': ['react', 'react-dom', 'react-router-dom'],
-          'semi-ui': ['@douyinfe/semi-icons', '@douyinfe/semi-ui'],
-          tools: ['axios', 'history', 'marked'],
-          'react-components': [
-            'react-dropzone',
-            'react-fireworks',
-            'react-telegram-login',
-            'react-toastify',
-            'react-turnstile',
-          ],
-          i18n: [
-            'i18next',
-            'react-i18next',
-            'i18next-browser-languagedetector',
-          ],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@douyinfe/semi-ui')) {
+              return 'semi-ui';
+            }
+            if (id.includes('@douyinfe/semi-icons')) {
+              return 'semi-icons';
+            }
+            if (id.includes('react-dom')) {
+              return 'react-dom';
+            }
+            if (id.includes('react/') || id.includes('react@')) {
+              return 'react';
+            }
+            if (id.includes('react-router') || id.includes('history')) {
+              return 'react-router';
+            }
+            if (id.includes('axios')) {
+              return 'axios';
+            }
+            if (id.includes('marked')) {
+              return 'marked';
+            }
+            if (id.includes('i18next') || id.includes('react-i18next')) {
+              return 'i18n';
+            }
+            if (id.includes('lottie-web')) {
+              return 'lottie';
+            }
+            // Remaining node_modules in smaller buckets
+            return 'vendor';
+          }
         },
       },
     },
